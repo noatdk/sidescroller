@@ -6,6 +6,7 @@
 #define SCREEN_HEIGHT 720.0
 #define PIXEL_WINDOW_HEIGHT 180.0
 #define PLAYER_HEIGHT 64.0
+#define CROUCHING_SPEED 40.0;
 #define WALKING_SPEED 110.0
 #define RUNNING_SPEED 400.0
 #define GRAVITY 2000.0
@@ -32,6 +33,7 @@ typedef enum {
     WALK = 1,
     RUN = 2,
     JUMP = 3,
+    CROUCHING = 4,
     ANIM_COUNT = 4,
 } Animation_Type;
 
@@ -99,6 +101,13 @@ void update_animation(Animation *anim, float dt, Vector2 dir, Animation_Type *pr
             anim->frame_timer = 0.0f;
         }
         break;
+    case CROUCHING:
+        if (anim->frame_len < anim->frame_timer) {
+            anim->current_frame++;
+            anim->current_frame = min(anim->current_frame, anim->frames - 1);
+            anim->frame_timer = 0.0f;
+        }
+        break;
     default:
         // not really correct but a bit faster
         anim->current_frame = (int)(GetTime() / anim->frame_len) % anim->frames;
@@ -124,11 +133,13 @@ int main()
     Animation player_walk = CreateAnimation("assets/naruto_walk.png", 6, 0.15f, WALK);
     Animation player_run = CreateAnimation("assets/naruto_run.png", 6, 0.07f, RUN);
     Animation player_jump = CreateAnimation("assets/naruto_jump.png", 5, 0.09f, JUMP);
+    Animation player_crouch = CreateAnimation("assets/naruto_crouch.png", 3, 0.1f, CROUCHING);
 
     Vector2 pos = {SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2};
     Vector2 velo = {};
     Vector2 dir = {};
     bool is_grounded = false;
+    bool is_crouching = false;
     bool is_running = false;
     float prev_landing_time = GetTime();
     Animation_Type prev_anim = IDLE;
@@ -145,6 +156,7 @@ int main()
         // disallows changing of speed midair
         if (is_grounded) {
             is_running = IsKeyDown(KEY_LEFT_SHIFT);
+            is_crouching = IsKeyDown(KEY_S) && !is_running;
         }
         if (IsKeyDown(KEY_A)) {
             dir.x = last_dir_x = LEFT;
@@ -156,10 +168,16 @@ int main()
             if (is_running) {
                 dir.x *= RUNNING_SPEED;
                 current_anim = &player_run;
+            } else if (is_crouching) {
+                // TODO
+                dir.x *= CROUCHING_SPEED;
+                current_anim = &player_crouch;
             } else {
                 dir.x *= WALKING_SPEED;
                 current_anim = &player_walk;
             }
+        } else if (is_crouching) {
+            current_anim = &player_crouch;
         }
 
         // dir.y is acceleration (rate of change of velosity) so *dt twice before added to pos
@@ -168,6 +186,7 @@ int main()
         if (is_grounded && IsKeyPressed(KEY_SPACE)) {
             dir.y = JUMP_SPEED;
             is_grounded = false;
+            is_crouching = false;
         }
         pos = Vector2Add(pos, Vector2Scale(dir, dt));
         if (pos.y >= pos_offset) {
@@ -184,6 +203,11 @@ int main()
         // cancel the landing animation early if there's horizontal movement;
         if (GetTime() - prev_landing_time <= LANDING_DUR && dir.x == 0) {
             current_anim = &player_jump;
+            if (is_crouching) {
+                // skip the first crouching frame for smooth transition between landing animation and crouching
+                current_anim = &player_crouch;
+                current_anim->current_frame = max(1, current_anim->current_frame);
+            }
             dir.y = 0;
         }
 
